@@ -106,7 +106,7 @@ def share_image() -> Image.Image:
     title = font(["segoeuib.ttf", "C:/Windows/Fonts/segoeuib.ttf", "DejaVuSans-Bold.ttf"], 112)
     body = font(["segoeui.ttf", "C:/Windows/Fonts/segoeui.ttf", "DejaVuSans.ttf"], 40)
     d.text((470, 190), "Cubit", font=title, fill=(231, 237, 246))
-    d.text((474, 340), "Exact construction calculator", font=body, fill=(231, 237, 246))
+    d.text((474, 340), "Construction calculator", font=body, fill=(231, 237, 246))
     d.text((474, 395), "12' x 14'6\" + 40 sf  =  214 ft²", font=body, fill=(111, 157, 255))
     d.text((474, 450), "Feet, inches and metres. Works offline.", font=body, fill=(147, 163, 186))
     return img

@@ -2,7 +2,7 @@
 
 **Open it: https://mohamedaatif-caivan.github.io/cubit/**
 
-A fast, exact construction calculator for feet, inches and metres, as an installable web app. It's the web version of the Cubit desktop app and gives the same answers: the engine is a TypeScript port of the desktop engine and is checked against the same hand-checked tables and tests.
+A fast construction calculator for feet, inches and metres, as an installable web app. It's the web version of the Cubit desktop app and gives the same answers: the engine is a TypeScript port of the desktop engine and is checked against the same hand-checked tables and tests.
 
 Open it in any browser, or install it so it gets its own window and icon:
 

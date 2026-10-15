@@ -18,7 +18,7 @@ export default defineConfig({
       manifest: {
         name: 'Cubit',
         short_name: 'Cubit',
-        description: 'An exact construction calculator for feet, inches and metres.',
+        description: 'A construction calculator for feet, inches and metres.',
         id: './',
         start_url: './',
         scope: './',
