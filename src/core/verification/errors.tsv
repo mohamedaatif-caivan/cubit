@@ -1,0 +1,32 @@
+# Inputs that must be rejected, with a phrase the error message must contain. Tab-separated:
+# input	expected message fragment
+5' 6	Missing unit or operator
+1/0"	can't be /0
+5' + 3 ft2	Can't add length and area
+(5'	Missing )
+5')	Extra )
+@nothing	No saved value @nothing
+ft	Number needed before
+2' x 3' x 4' x 5'	Too many dimensions
+5 / 0	Divide by zero
+5' to m2	Can't show length in m²
+abc	Unknown unit
+1.2.3	Too many decimal points
+5' +	Unfinished
+sqrt(-4)	negative
+sqrt(5')	Can't √ a length
+1 / 5'	Can't divide plain number by length
+ans	No answer yet
+10'%	% needs a plain number
+5'^4	Too many dimensions
+1,5 m	Unknown symbol
+
+# Assumed units never guess: mixed units, a plain number first, or a hyphen after feet stay explicit
+1 + 1m	Missing unit
+5'6" + 2	Missing unit
+1m + 1ft + 2	Missing unit
+5'-6	Missing unit
+1m + 2 x 3	Missing unit
+(1 + 2) + 1m	Missing unit
+1m x 2 + 1	Missing unit
+1m + @nothing + 1	No saved value @nothing

@@ -1,0 +1,130 @@
+# Golden calculations: hand-checked answers. One row per case, tab-separated:
+# input	format	precision	rounding	expected
+# format = a display format id (ft-in, in-frac, ft, in, m, cm, mm, ft2, yd3, m2, num, ...)
+# precision = fraction denominator for ft-in / in-frac (16 = 1/16"), decimal places otherwise
+# rounding = nearest | up | down
+# Add rows freely: every row runs in the test suite (GoldenTests.cs) and in the app (Settings > Verify calculations).
+
+# --- Construction notation (feet-inches) ---
+5'6"	ft-in	16	nearest	5'-6"
+5' 6"	ft-in	16	nearest	5'-6"
+5'6 1/2"	ft-in	16	nearest	5'-6 1/2"
+5'6-1/2"	ft-in	16	nearest	5'-6 1/2"
+5'-6"	ft-in	16	nearest	5'-6"
+5'-6 1/2"	ft-in	16	nearest	5'-6 1/2"
+5' - 6"	ft-in	16	nearest	4'-6"
+5ft 6in	ft-in	16	nearest	5'-6"
+5 ft 6 in	ft-in	16	nearest	5'-6"
+5’6”	ft-in	16	nearest	5'-6"
+-5'6"	ft-in	16	nearest	-5'-6"
+0'6"	ft-in	16	nearest	6"
+11 15/16"	ft-in	16	nearest	11 15/16"
+1.5' + 1.5"	ft-in	16	nearest	1'-7 1/2"
+1 1/2"	in-frac	16	nearest	1 1/2"
+6-1/2"	in-frac	16	nearest	6 1/2"
+3/4" + 5/8"	in-frac	16	nearest	1 3/8"
+1/64"	in-frac	64	nearest	1/64"
+1/64"	in-frac	16	nearest	0"
+-1/64"	ft-in	16	nearest	0"
+1/16"	in	4	nearest	0.0625 in
+
+# --- Mixed units ---
+1m	mm	1	nearest	1000.0 mm
+100cm + 12"	mm	1	nearest	1304.8 mm
+(0.3048m) + 1'	ft	4	nearest	2.0000 ft
+25.4mm	in	3	nearest	1.000 in
+1'	m	4	nearest	0.3048 m
+5'6"	m	4	nearest	1.6764 m
+5'6" to mm	mm	1	nearest	1676.4 mm
+1m	ft-in	16	nearest	3'-3 3/8"
+1m	in-frac	32	nearest	39 3/8"
+1,250mm	m	3	nearest	1.250 m
+2m - 2000mm	mm	1	nearest	0.0 mm
+1 mi	ft	0	nearest	5280 ft
+1 yd	in	0	nearest	36 in
+
+# --- Arithmetic on lengths ---
+2' * 3	ft-in	16	nearest	6'-0"
+(2' + 6") * 2	ft-in	16	nearest	5'-0"
+10' / 3	ft-in	16	nearest	3'-4"
+10' / 4	ft-in	16	nearest	2'-6"
+24' / 16	ft-in	16	nearest	1'-6"
+100' / 7	ft-in	16	nearest	14'-3 7/16"
+sqrt(3'^2 + 4'^2)	ft-in	16	nearest	5'-0"
+sqrt(12'^2 + 16'^2)	ft-in	16	nearest	20'-0"
+
+# --- Area and volume ---
+12' x 14'	ft2	2	nearest	168.00 ft²
+12'x14'	ft2	2	nearest	168.00 ft²
+12' x 14' to m2	m2	3	nearest	15.608 m²
+12'^2	ft2	2	nearest	144.00 ft²
+(6")²	in2	0	nearest	36 in²
+10' x 10' x 4"	yd3	2	nearest	1.23 yd³
+1 acre to ft2	ft2	2	nearest	43560.00 ft²
+1 cu yd to ft3	ft3	2	nearest	27.00 ft³
+1 sq ft to in2	in2	0	nearest	144 in²
+1 gal to in3	in3	1	nearest	231.0 in³
+1 yd3 to L	L	1	nearest	764.6 L
+pi * (6")^2	in2	2	nearest	113.10 in²
+
+# --- Plain numbers ---
+3' / 1'	num	6	nearest	3
+1' / 3'	num	6	nearest	0.333333
+50%	num	6	nearest	0.5
+2 x 4	num	6	nearest	8
+3 1/2 * 2	num	6	nearest	7
+0	num	6	nearest	0
+
+# --- Copy rounding (COPY_AND_ROUNDING_SPEC tables) ---
+1'6 5/16"	ft-in	16	nearest	1'-6 5/16"
+1'6 5/16"	ft-in	4	down	1'-6 1/4"
+1'6 5/16"	ft-in	4	nearest	1'-6 1/4"
+1'6 5/16"	ft-in	4	up	1'-6 1/2"
+1'6 5/16"	ft-in	1	down	1'-6"
+1'6 5/16"	ft-in	1	nearest	1'-6"
+1'6 5/16"	ft-in	1	up	1'-7"
+11 15/16"	ft-in	1	up	1'-0"
+11 15/16"	ft-in	1	nearest	1'-0"
+11 15/16"	ft-in	1	down	11"
+-1'-6 5/16"	ft-in	4	nearest	-1'-6 1/4"
+-1'-6 5/16"	ft-in	4	up	-1'-6 1/4"
+-1'-6 5/16"	ft-in	4	down	-1'-6 1/2"
+1.23456m	m	2	nearest	1.23 m
+1.23456m	m	2	up	1.24 m
+1.23456m	m	2	down	1.23 m
+1234.56mm	mm	0	down	1234 mm
+1234.56mm	mm	0	up	1235 mm
+-1.005m	m	2	nearest	-1.01 m
+
+# --- Zero inches are kept after feet (40'-0 5/16", never 40'-5/16") ---
+40' 5/16"	ft-in	16	nearest	40'-0 5/16"
+40'-0 5/16"	ft-in	16	nearest	40'-0 5/16"
+12.2m	ft-in	16	nearest	40'-0 5/16"
+-1'-0 1/2"	ft-in	16	nearest	-1'-0 1/2"
+5/16"	ft-in	16	nearest	5/16"
+40' 5/16"	in-frac	16	nearest	480 5/16"
+8'-1 1/4"	ft-in	16	nearest	8'-1 1/4"
+
+# --- Desk-calculator percent: X + n% = X × (1 + n/100) ---
+100 + 10%	num	6	nearest	110
+16 yd3 + 10%	yd3	2	nearest	17.60 yd³
+10' - 25%	ft-in	16	nearest	7'-6"
+200 x 15%	num	6	nearest	30
+12' x 14' + 5%	ft2	2	nearest	176.40 ft²
+(4' + 2') + 50%	ft-in	16	nearest	9'-0"
+
+# --- Assumed units: in a sum whose first value has a unit, plain numbers take that unit (only one unit in the sum) ---
+1m + 1	m	4	nearest	2.0000 m
+1" + 1 + 2	in-frac	16	nearest	4"
+5' + 3	ft-in	16	nearest	8'-0"
+5 ft - 3	ft-in	16	nearest	2'-0"
+1200mm + 300 - 50	mm	1	nearest	1450.0 mm
+1m + 1 1/2	mm	1	nearest	2500.0 mm
+1m + -1 + 3	m	4	nearest	3.0000 m
+10 sq ft + 5	ft2	2	nearest	15.00 ft²
+2 yd3 + 0.5 + 10%	yd3	2	nearest	2.75 yd³
+(1m + 1) x 2	m	4	nearest	4.0000 m
+2 x (3' + 1)	ft-in	16	nearest	8'-0"
+1m + 1 to mm	mm	1	nearest	2000.0 mm
+1m + 1m + 1	m	4	nearest	3.0000 m
+1m x 2 + 1m	m	4	nearest	3.0000 m
