@@ -108,7 +108,8 @@ def main() -> None:
         tile.resize((n, n), Image.LANCZOS).save(PUBLIC / f"icon-{n}.png")
     full_bleed(0.78).resize((512, 512), Image.LANCZOS).save(PUBLIC / "icon-maskable-512.png")
     full_bleed(0.9).convert("RGB").resize((180, 180), Image.LANCZOS).save(PUBLIC / "apple-touch-icon.png")
-    share_image().save(PUBLIC / "og.png", optimize=True)
+    # A new file name whenever the wording changes: Teams and WhatsApp cache previews by image address.
+    share_image().save(PUBLIC / "og-2.png", optimize=True)
     print(f"Wrote icons to {PUBLIC}")
 
 
