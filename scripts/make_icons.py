@@ -1,7 +1,7 @@
-"""Draw the Cubit icon (a carpenter's square on a blueprint tile) for the web app.
+"""Draw the Cubit icon (a rule over a keypad with a safety-orange = key) for the web app.
 
-Same artwork as the desktop app's scripts/make_icon.py. Writes public/icon.svg plus the PNG sizes
-browsers and phones ask for, including a full-bleed "maskable" icon for Android.
+Same artwork as the desktop app's scripts/make_icon.py, laid out on a 100-unit grid inside the tile. Writes
+public/icon.svg plus the PNG sizes browsers and phones ask for, including a full-bleed "maskable" icon for Android.
 
 Run: python scripts/make_icons.py   (needs Pillow)
 """
@@ -12,77 +12,65 @@ from PIL import Image, ImageDraw, ImageFont
 
 S = 1024
 PUBLIC = Path(__file__).resolve().parent.parent / "public"
-TOP, BOTTOM = (37, 99, 235), (23, 52, 140)  # blueprint blue gradient
+TILE = (31, 91, 216)  # #1F5BD8
+WHITE = (255, 255, 255)
+ORANGE = (245, 158, 11)  # #F59E0B
+BROWN = (107, 53, 0)  # #6B3500, the = bars on the orange key
 
 
-def lerp(a, b, t):
-    return tuple(round(x + (y - x) * t) for x, y in zip(a, b))
+def shapes():
+    """(x, y, w, h, radius, colour) on the 100-unit grid, drawn in order."""
+    yield 18, 16, 64, 16, 3, WHITE  # the rule
+    for i, x in enumerate(range(26, 75, 8)):  # graduations cut into its top edge, long every third
+        yield x - 1.2, 16, 2.4, 10 if i % 3 == 0 else 6, 0, TILE
+    yield 18, 40, 29, 19, 4, WHITE  # keypad
+    yield 53, 40, 29, 19, 4, WHITE
+    yield 18, 65, 29, 19, 4, WHITE
+    yield 53, 65, 29, 19, 4, ORANGE  # the = key
+    yield 60, 70, 15, 3, 1, BROWN
+    yield 60, 76, 15, 3, 1, BROWN
 
 
-def gradient() -> Image.Image:
-    img = Image.new("RGBA", (S, S))
-    px = img.load()
-    for y in range(S):
-        for x in range(S):
-            px[x, y] = (*lerp(TOP, BOTTOM, (x * 0.35 + y) / (S * 1.35)), 255)
-    return img
+def art(d: ImageDraw.ImageDraw, scale: float = 1.0) -> None:
+    """The shapes on the tile, scaled about the centre (maskable icons need a safe zone)."""
+    k = (S - 80) / 100
 
-
-def square(d: ImageDraw.ImageDraw, scale: float = 1.0) -> None:
-    """The carpenter's square, scaled about the centre (maskable icons need a safe zone)."""
     def t(v):
-        return S / 2 + (v - S / 2) * scale
+        return S / 2 + (40 + v * k - S / 2) * scale
 
-    white = (255, 255, 255, 255)
-    blue = (*BOTTOM, 255)
-    x0, y0, x1, y1, w = 250, 230, 790, 770, 118
-    r = 26 * scale
-    d.rounded_rectangle((t(x0), t(y0), t(x0 + w), t(y1)), radius=r, fill=white)
-    d.rounded_rectangle((t(x0), t(y1 - w), t(x1), t(y1)), radius=r, fill=white)
-    for i in range(1, 9):
-        length = 58 if i % 4 == 0 else 34
-        y = y1 - w - i * 52
-        if y > y0 + 30:
-            d.rectangle((t(x0 + w - length), t(y - 7), t(x0 + w), t(y + 7)), fill=blue)
-        x = x0 + w + i * 52
-        if x < x1 - 30:
-            d.rectangle((t(x - 7), t(y1 - w), t(x + 7), t(y1 - w + length)), fill=blue)
+    for x, y, w, h, r, colour in shapes():
+        d.rounded_rectangle((t(x), t(y), t(x + w), t(y + h)), radius=r * k * scale, fill=colour)
 
 
 def rounded() -> Image.Image:
-    mask = Image.new("L", (S, S), 0)
-    ImageDraw.Draw(mask).rounded_rectangle((40, 40, S - 40, S - 40), radius=210, fill=255)
     icon = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    icon.paste(gradient(), (0, 0), mask)
-    square(ImageDraw.Draw(icon))
+    d = ImageDraw.Draw(icon)
+    d.rounded_rectangle((40, 40, S - 40, S - 40), radius=210, fill=TILE)
+    art(d)
     return icon
 
 
 def full_bleed(scale: float) -> Image.Image:
-    icon = gradient()
-    square(ImageDraw.Draw(icon), scale)
+    icon = Image.new("RGBA", (S, S), TILE)
+    art(ImageDraw.Draw(icon), scale)
     return icon
 
 
 def svg() -> str:
-    x0, y0, x1, y1, w = 250, 230, 790, 770, 118
-    ticks = []
-    for i in range(1, 9):
-        length = 58 if i % 4 == 0 else 34
-        y = y1 - w - i * 52
-        if y > y0 + 30:
-            ticks.append(f'<rect x="{x0 + w - length}" y="{y - 7}" width="{length}" height="14"/>')
-        x = x0 + w + i * 52
-        if x < x1 - 30:
-            ticks.append(f'<rect x="{x - 7}" y="{y1 - w}" width="14" height="{length}"/>')
+    def hexc(c):
+        return "#%02x%02x%02x" % c
+
+    def n(v):
+        return f"{v:g}"
+
+    parts = [
+        f'<rect x="{n(x)}" y="{n(y)}" width="{n(w)}" height="{n(h)}"' + (f' rx="{n(r)}"' if r else "") + f' fill="{hexc(c)}"/>'
+        for x, y, w, h, r, c in shapes()
+    ]
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">'
-        '<defs><linearGradient id="g" x1="0" y1="0" x2="0.26" y2="1">'
-        '<stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#17348c"/></linearGradient></defs>'
-        '<rect x="40" y="40" width="944" height="944" rx="210" fill="url(#g)"/>'
-        f'<g fill="#fff"><rect x="{x0}" y="{y0}" width="{w}" height="{y1 - y0}" rx="26"/>'
-        f'<rect x="{x0}" y="{y1 - w}" width="{x1 - x0}" height="{w}" rx="26"/></g>'
-        f'<g fill="#17348c">{"".join(ticks)}</g></svg>\n'
+        f'<rect x="40" y="40" width="944" height="944" rx="210" fill="{hexc(TILE)}"/>'
+        f'<g transform="translate(40 40) scale(9.44)">{"".join(parts)}</g></svg>\n'
     )
 
 
@@ -115,9 +103,9 @@ def share_image() -> Image.Image:
 def main() -> None:
     PUBLIC.mkdir(exist_ok=True)
     (PUBLIC / "icon.svg").write_text(svg(), encoding="utf-8")
-    art = rounded()
+    tile = rounded()
     for n in (192, 512):
-        art.resize((n, n), Image.LANCZOS).save(PUBLIC / f"icon-{n}.png")
+        tile.resize((n, n), Image.LANCZOS).save(PUBLIC / f"icon-{n}.png")
     full_bleed(0.78).resize((512, 512), Image.LANCZOS).save(PUBLIC / "icon-maskable-512.png")
     full_bleed(0.9).convert("RGB").resize((180, 180), Image.LANCZOS).save(PUBLIC / "apple-touch-icon.png")
     share_image().save(PUBLIC / "og.png", optimize=True)
