@@ -1,3 +1,4 @@
+import { Fragment } from 'preact';
 import { Anchor, Popover } from './Popover';
 
 const typing: [string, string][] = [
@@ -34,33 +35,33 @@ export function Help({ anchor, onClose }: { anchor: Anchor; onClose: () => void 
       <h2 class="pop-title">Typing measurements</h2>
       <dl class="help-grid">
         {typing.map(([example, meaning]) => (
-          <>
+          <Fragment key={example}>
             <dt>
               <code>{example}</code>
             </dt>
             <dd>{meaning}</dd>
-          </>
+          </Fragment>
         ))}
       </dl>
       <h2 class="pop-title">Keyboard</h2>
       <dl class="help-grid keys">
         {keyboard.map(([combos, action]) => (
-          <>
+          <Fragment key={action}>
             <dt>
               {combos.map((combo, c) => (
-                <>
+                <Fragment key={c}>
                   {c > 0 && <span class="muted"> / </span>}
                   {combo.map((key, k) => (
-                    <>
+                    <Fragment key={k}>
                       {k > 0 && <span class="muted">+</span>}
                       <kbd>{key}</kbd>
-                    </>
+                    </Fragment>
                   ))}
-                </>
+                </Fragment>
               ))}
             </dt>
             <dd>{action}</dd>
-          </>
+          </Fragment>
         ))}
       </dl>
     </Popover>

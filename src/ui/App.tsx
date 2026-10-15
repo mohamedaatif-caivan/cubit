@@ -87,7 +87,13 @@ async function popOut(): Promise<void> {
     api.window.focus();
     return;
   }
-  const pip = await api.requestWindow({ width: 420, height: 260 });
+  let pip: Window;
+  try {
+    pip = await api.requestWindow({ width: 420, height: 260 });
+  } catch {
+    store.toast("This browser couldn't open a floating window");
+    return;
+  }
   for (const node of document.head.querySelectorAll('style, link[rel="stylesheet"]')) pip.document.head.appendChild(node.cloneNode(true));
   pip.document.title = 'Cubit';
   pip.document.body.classList.add('pip');

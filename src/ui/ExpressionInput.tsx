@@ -12,6 +12,7 @@ export interface InputApi {
 }
 
 let active: InputApi | null = null;
+const mounted: InputApi[] = [];
 
 /** The calculation box currently on screen (full or compact layout). */
 export const activeInput = (): InputApi | null => active;
@@ -199,12 +200,18 @@ export function ExpressionInput({ class: className, placeholder, label }: Props)
     },
   };
 
+  // The keypad and shortcuts type into the box that was shown or focused last (main page or floating window).
+  // The API only touches refs and the store, so the first render's copy stays valid.
+  const apiRef = useRef(api);
   useEffect(() => {
-    active = api;
+    const mine = apiRef.current;
+    mounted.push(mine);
+    active = mine;
     return () => {
-      if (active === api) active = null;
+      mounted.splice(mounted.indexOf(mine), 1);
+      if (active === mine) active = mounted[mounted.length - 1] ?? null;
     };
-  });
+  }, []);
 
   // Text set from outside (Enter, ↑/↓, a tape entry): show it with the caret at the end, as one undo step.
   useLayoutEffect(() => {
@@ -348,7 +355,7 @@ export function ExpressionInput({ class: className, placeholder, label }: Props)
         onInput={onInput}
         onPaste={onPaste}
         onScroll={syncMirror}
-        onFocus={() => (active = api)}
+        onFocus={() => (active = apiRef.current)}
       />
     </div>
   );
