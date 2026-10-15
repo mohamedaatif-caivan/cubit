@@ -22,7 +22,9 @@ const keyboard: [string[][], string][] = [
   [[['Ctrl', 'Shift', 'C']], 'Copy options'],
   [[['Ctrl', 'U']], 'Answer in the first unit typed, or fixed'],
   [[['Ctrl', 'S']], 'Save as a named value'],
-  [[['Ctrl', '1…9']], 'Insert a saved value'],
+  [[['Alt', '1…9'], ['Ctrl', '1…9']], 'Insert a saved value'],
+  [[['Ctrl', 'Z'], ['Ctrl', 'Y']], 'Undo or redo typing, or bring back a deletion'],
+  [[['Ctrl', 'L']], 'Select the calculation'],
   [[['Alt', 'F'], ['Alt', 'I']], 'Type \' or "'],
   [[['Ctrl', 'M']], 'Full or compact layout'],
   [[['Ctrl', ',']], 'Settings'],
@@ -43,6 +45,7 @@ export function Help({ anchor, onClose }: { anchor: Anchor; onClose: () => void 
           </Fragment>
         ))}
       </dl>
+      <div class="help-keys">
       <h2 class="pop-title">Keyboard</h2>
       <dl class="help-grid keys">
         {keyboard.map(([combos, action]) => (
@@ -64,6 +67,7 @@ export function Help({ anchor, onClose }: { anchor: Anchor; onClose: () => void 
           </Fragment>
         ))}
       </dl>
+      </div>
     </Popover>
   );
 }

@@ -8,7 +8,7 @@ Run: python scripts/make_icons.py   (needs Pillow)
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 S = 1024
 PUBLIC = Path(__file__).resolve().parent.parent / "public"
@@ -86,6 +86,32 @@ def svg() -> str:
     )
 
 
+def font(names, size):
+    """The first of these fonts that exists (Windows fonts, then Pillow's default)."""
+    for name in names:
+        try:
+            return ImageFont.truetype(name, size)
+        except OSError:
+            continue
+    return ImageFont.load_default(size)
+
+
+def share_image() -> Image.Image:
+    """1200x630 preview shown when the link is pasted into Teams, WhatsApp or a text message."""
+    w, h = 1200, 630
+    img = Image.new("RGB", (w, h), (15, 26, 46))
+    icon = rounded().resize((300, 300), Image.LANCZOS)
+    img.paste(icon, (110, (h - 300) // 2), icon)
+    d = ImageDraw.Draw(img)
+    title = font(["segoeuib.ttf", "C:/Windows/Fonts/segoeuib.ttf", "DejaVuSans-Bold.ttf"], 112)
+    body = font(["segoeui.ttf", "C:/Windows/Fonts/segoeui.ttf", "DejaVuSans.ttf"], 40)
+    d.text((470, 190), "Cubit", font=title, fill=(231, 237, 246))
+    d.text((474, 340), "Exact construction calculator", font=body, fill=(231, 237, 246))
+    d.text((474, 395), "12' x 14'6\" + 40 sf  =  214 ft²", font=body, fill=(111, 157, 255))
+    d.text((474, 450), "Feet, inches and metres. Works offline.", font=body, fill=(147, 163, 186))
+    return img
+
+
 def main() -> None:
     PUBLIC.mkdir(exist_ok=True)
     (PUBLIC / "icon.svg").write_text(svg(), encoding="utf-8")
@@ -94,6 +120,7 @@ def main() -> None:
         art.resize((n, n), Image.LANCZOS).save(PUBLIC / f"icon-{n}.png")
     full_bleed(0.78).resize((512, 512), Image.LANCZOS).save(PUBLIC / "icon-maskable-512.png")
     full_bleed(0.9).convert("RGB").resize((180, 180), Image.LANCZOS).save(PUBLIC / "apple-touch-icon.png")
+    share_image().save(PUBLIC / "og.png", optimize=True)
     print(f"Wrote icons to {PUBLIC}")
 
 

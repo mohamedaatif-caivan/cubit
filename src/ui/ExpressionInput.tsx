@@ -73,6 +73,8 @@ export function ExpressionInput({ class: className, placeholder, label }: Props)
   const [ghostWidth, setGhostWidth] = useState(0);
   const history = useRef({ steps: [{ text: '', caret: 0 }], index: 0, lastTyped: 0 });
   const shown = useRef('');
+  /** An input method (phone keyboard suggestions, IME) is composing a word: don't rewrite the text under it. */
+  const composing = useRef(false);
 
   const el = (): HTMLInputElement => inputRef.current!;
   const caret = (): number => el().selectionEnd ?? el().value.length;
@@ -104,7 +106,7 @@ export function ExpressionInput({ class: className, placeholder, label }: Props)
    */
   const syncHints = (): void => {
     const input = inputRef.current;
-    if (!input || input.value !== store.session.input) return;
+    if (!input || input.value !== store.session.input || composing.current) return;
     if ((input.selectionStart ?? 0) !== (input.selectionEnd ?? 0)) {
       setGhost(null); // never rewrite the text under a selection
       return;
@@ -170,7 +172,7 @@ export function ExpressionInput({ class: className, placeholder, label }: Props)
       const start = input.selectionStart ?? previous.length;
       const end = input.selectionEnd ?? previous.length;
       input.setRangeText(text, start, end, 'end');
-      edited(previous, input.value, false);
+      edited(previous, input.value, Math.abs(input.value.length - previous.length) === 1);
       api.focus();
     },
     backspace() {
@@ -183,7 +185,7 @@ export function ExpressionInput({ class: className, placeholder, label }: Props)
         start--;
       }
       input.setRangeText('', start, end, 'end');
-      edited(previous, input.value, false);
+      edited(previous, input.value, Math.abs(input.value.length - previous.length) === 1);
       api.focus();
     },
     focus() {
@@ -253,7 +255,10 @@ export function ExpressionInput({ class: className, placeholder, label }: Props)
     const ctrl = e.ctrlKey || e.metaKey;
     if (ctrl && !e.altKey) {
       const key = e.key.toLowerCase();
-      if (key === 'z' && !e.shiftKey) {
+      if (key === 'z' && !e.shiftKey && store.undoNotice && el().value === '') {
+        store.undo(); // an empty box: Ctrl+Z brings back what was just deleted
+        e.preventDefault();
+      } else if (key === 'z' && !e.shiftKey) {
         stepHistory(-1);
         e.preventDefault();
       } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
@@ -321,7 +326,9 @@ export function ExpressionInput({ class: className, placeholder, label }: Props)
 
   const errorRange = s.errorRange;
   const parts = segments(session.input, session.highlights, errorRange);
-  const deviceKeyboard = s.settings.deviceKeyboard || !isTouch();
+  // On touch screens the keypad replaces the phone keyboard, but only while a keypad is actually on screen.
+  const keypadShown = s.settings.layout === 'Full' && s.settings.showKeypad;
+  const deviceKeyboard = s.settings.deviceKeyboard || !isTouch() || !keypadShown;
 
   return (
     <div class={`expr ${className ?? ''}`} style={{ '--ghost-w': `${ghostWidth}px` }} title={errorRange ? (session.error ?? undefined) : undefined}>
@@ -356,6 +363,11 @@ export function ExpressionInput({ class: className, placeholder, label }: Props)
         onPaste={onPaste}
         onScroll={syncMirror}
         onFocus={() => (active = apiRef.current)}
+        onCompositionStart={() => (composing.current = true)}
+        onCompositionEnd={() => {
+          composing.current = false;
+          setTimeout(syncHints, 0);
+        }}
       />
     </div>
   );

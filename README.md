@@ -1,8 +1,16 @@
 # Cubit (web)
 
+**Open it: https://mohamedaatif-caivan.github.io/cubit/**
+
 A fast, exact construction calculator for feet, inches and metres, as an installable web app. It's the web version of the Cubit desktop app and gives the same answers: the engine is a TypeScript port of the desktop engine and is checked against the same hand-checked tables and tests.
 
-Open it in any browser, or install it (Chrome/Edge: the install icon in the address bar or **Settings → Install Cubit**; iPhone: **Share → Add to Home Screen**). Once loaded it works offline.
+Open it in any browser, or install it so it gets its own window and icon:
+
+- **Windows (Chrome or Edge):** the **Install** button at the top of Cubit, or the install icon in the address bar.
+- **Android (Chrome):** **Install** at the top of Cubit, or ⋮ → **Add to Home screen**.
+- **iPhone/iPad:** open the link **in Safari** (not inside Teams or WhatsApp), then **Share → Add to Home Screen**. Safari clears data from sites that aren't installed after 7 days without a visit, and data in a Safari tab doesn't move into the installed app, so install first.
+
+Once loaded it works offline.
 
 ## What it does
 
@@ -15,7 +23,7 @@ Open it in any browser, or install it (Chrome/Edge: the install icon in the addr
 - **Copy that pastes cleanly** into Excel and CAD, with copy options for format and rounding (nearest, up, down, any step).
 - **Tape** with notes, CSV export and undo; **saved values** (`@wall`) and memory (`MR`, `M+`, `mem`); `ans` is the last answer.
 - **Phones:** a keypad with ' and " keys, and no pop-up keyboard (turn on **Settings → Device keyboard** to type with yours). Press and hold for the right-click menus.
-- **Compact layout** (Ctrl+M), and in Chrome/Edge a **floating window that stays on top** of other apps.
+- **Compact layout** (Ctrl+M): the calculation, the result and every unit as a row of chips.
 
 Data stays in your browser. **Settings → Your data** downloads a backup and imports one, including `state.json` from the desktop app (`%AppData%\Cubit`).
 
@@ -32,6 +40,7 @@ The tests are a port of the desktop suite (see the desktop repo's `docs/ACCURACY
 | `units.test.ts` | Each unit factor against its published value and against the other units |
 | `session.test.ts` | Screen behaviour: stale results, assumed units, copy, tape, saved values, memory, undo |
 | `architecture.test.ts` | `src/core` never uses `Math.`, `parseFloat` or float literals, and imports nothing outside itself |
+| `highlight.test.ts`, `customRounding.test.ts`, `rational.test.ts`, `workspace.test.ts` | Operator colouring, custom copy steps, exact arithmetic, saved data |
 
 **Settings → Verify calculations** re-runs the hand-checked tables on the user's own device.
 
@@ -61,4 +70,16 @@ npm run build      # type check + tests + production build in dist/
 2. In the repository: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 3. Every push to `main` runs the tests and deploys to `https://<user>.github.io/<repo>/`. A failing test stops the deploy.
 
-Paths are relative, so it works under any repository name. Installed copies pick up a new version in the background and show **Update ready · Restart now**.
+Paths are relative, so it works under any repository name. Installed copies pick up a new version in the background and show **Update ready · Restart now**. Settings shows the version with the commit it was built from (e.g. `0.2.0+9fffd38`).
+
+### Rolling back a bad deploy
+
+`git revert <commit> && git push` redeploys the previous behaviour in about a minute; open copies see it as a normal "Update ready". (Re-running an older Actions run also works, as long as you re-run all its jobs.)
+
+### Keyboard
+
+The desktop app's shortcuts work, with one addition: browsers can keep **Ctrl+1…9** for switching tabs, so **Alt+1…9** also inserts a saved value.
+
+### Before changing the address
+
+Installs and saved data belong to the address they were made on (`mohamedaatif-caivan.github.io`). Moving to another domain later means everyone reinstalls and moves their data with **Settings → Your data → Download / Import**.

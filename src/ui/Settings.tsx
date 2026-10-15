@@ -11,7 +11,8 @@ import { errorLog, useStore } from './store';
 
 declare const __APP_VERSION__: string;
 
-function Row({ title, hint, children }: { title: string; hint?: string; children: ComponentChildren }) {
+/** A setting: title and hint, its control, and an optional result line inside the same card row. */
+function Row({ title, hint, children, note }: { title: string; hint?: string; children: ComponentChildren; note?: ComponentChildren }) {
   return (
     <div class="set-row">
       <div class="set-text">
@@ -19,6 +20,7 @@ function Row({ title, hint, children }: { title: string; hint?: string; children
         {hint && <div class="set-hint">{hint}</div>}
       </div>
       <div class="set-control">{children}</div>
+      {note && <div class="set-note">{note}</div>}
     </div>
   );
 }
@@ -66,7 +68,7 @@ function PlacesSelect({ format, label }: { format: DisplayFormat; label: string 
       >
         {Formats.DecimalPlaces.map((p) => (
           <option key={p} value={String(p)}>
-            {p}
+            {p === 1 ? '1 place' : `${p} places`}
           </option>
         ))}
       </select>
@@ -121,26 +123,26 @@ function Verify() {
     }, 30);
   };
   return (
-    <>
-      <Row
-        title="Verify calculations"
-        hint="Cubit uses exact fractions and legal unit definitions (1 in = 25.4 mm). Re-test this copy against its hand-checked answers."
-      >
-        <button class="btn" onClick={run} disabled={busy}>
-          {busy ? 'Checking…' : 'Verify'}
-        </button>
-      </Row>
-      {report && (
-        <div class={`banner ${allPassed(report) ? 'ok' : 'bad'}`} role="status">
-          <strong>{allPassed(report) ? 'All checks passed' : `${report.failures.length} check(s) failed`}</strong>
-          <p>
-            {allPassed(report)
-              ? `${report.total} hand-checked calculations, roundings and error cases gave the expected answer.`
-              : report.failures.slice(0, 5).join('\n')}
-          </p>
-        </div>
-      )}
-    </>
+    <Row
+      title="Verify calculations"
+      hint="Cubit uses exact fractions and legal unit definitions (1 in = 25.4 mm). Re-test this copy against its hand-checked answers."
+      note={
+        report && (
+          <div class={`banner ${allPassed(report) ? 'ok' : 'bad'}`} role="status">
+            <strong>{allPassed(report) ? 'All checks passed' : `${report.failures.length} check(s) failed`}</strong>
+            <p>
+              {allPassed(report)
+                ? `${report.total} hand-checked calculations, roundings and error cases gave the expected answer.`
+                : report.failures.slice(0, 5).join('\n')}
+            </p>
+          </div>
+        )
+      }
+    >
+      <button class="btn" onClick={run} disabled={busy}>
+        {busy ? 'Checking…' : 'Verify'}
+      </button>
+    </Row>
   );
 }
 
@@ -148,10 +150,12 @@ function AppSection() {
   const [, bump] = useState(0);
   useEffect(() => pwa.subscribe(() => bump((n) => n + 1)), []);
   const [checking, setChecking] = useState(false);
+  const [checked, setChecked] = useState<string | null>(null);
   const check = async (): Promise<void> => {
     setChecking(true);
-    await pwa.checkForUpdate();
+    const found = await pwa.checkForUpdate();
     setChecking(false);
+    setChecked(found ? 'A new version is downloading.' : navigator.onLine ? "You're up to date." : "You're offline. Cubit will check when you're back online.");
   };
   return (
     <>
@@ -167,9 +171,7 @@ function AppSection() {
         hint={
           pwa.updateReady
             ? 'A new version is ready.'
-            : pwa.offlineReady
-              ? `Version ${__APP_VERSION__}. Ready to work offline.`
-              : `Version ${__APP_VERSION__}.`
+            : `Version ${__APP_VERSION__}.${pwa.offlineReady ? ' Ready to work offline.' : ''}${checked ? ' ' + checked : ''}`
         }
       >
         {pwa.updateReady ? (
@@ -192,15 +194,17 @@ function DataSection() {
   const [includeData, setIncludeData] = useState(false);
 
   const importFile = async (file: File): Promise<void> => {
-    const text = await file.text();
-    const problem = s.importState(text);
+    const hasData = s.state.tape.length > 0 || s.state.savedValues.length > 0;
+    if (hasData && !confirm('Replace your tape, saved values and settings with this file? Download a backup first if you might want them back.')) return;
+    const result = s.importState(await file.text());
+    if (!result.ok) {
+      setMessage({ ok: false, text: `Couldn't import ${file.name}: ${result.message ?? 'not a Cubit data file.'} Nothing was changed.` });
+      return;
+    }
     const tape = s.state.tape.length;
     const saved = s.state.savedValues.length;
-    setMessage(
-      problem && tape === 0 && saved === 0
-        ? { ok: false, text: problem }
-        : { ok: true, text: `Imported ${tape} tape entr${tape === 1 ? 'y' : 'ies'} and ${saved} saved value${saved === 1 ? '' : 's'}.${problem ? ' ' + problem : ''}` },
-    );
+    const summary = `Imported ${tape} tape entr${tape === 1 ? 'y' : 'ies'} and ${saved} saved value${saved === 1 ? '' : 's'}.`;
+    setMessage({ ok: true, text: result.message ? `${summary} ${result.message}` : summary });
   };
 
   const report = (): void => {
@@ -225,7 +229,17 @@ function DataSection() {
           Download
         </button>
       </Row>
-      <Row title="Import data" hint="A Cubit backup, or state.json from the desktop app (%AppData%\Cubit). Replaces what's here.">
+      <Row
+        title="Import data"
+        hint="A Cubit backup, or state.json from the desktop app (%AppData%\Cubit). Replaces what's here."
+        note={
+          message && (
+            <div class={`banner ${message.ok ? 'ok' : 'bad'}`} role="status">
+              {message.text}
+            </div>
+          )
+        }
+      >
         <label class="btn file-btn">
           Choose file…
           <input
@@ -240,11 +254,6 @@ function DataSection() {
           />
         </label>
       </Row>
-      {message && (
-        <div class={`banner ${message.ok ? 'ok' : 'bad'}`} role="status">
-          {message.text}
-        </div>
-      )}
       <Row title="Report a problem" hint="Downloads a report with recent errors, ready to send.">
         <div class="stack-controls">
           <button class="btn" onClick={report}>

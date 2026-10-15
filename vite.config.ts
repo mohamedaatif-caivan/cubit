@@ -1,17 +1,20 @@
 import { defineConfig } from 'vitest/config';
 import preact from '@preact/preset-vite';
 import { VitePWA } from 'vite-plugin-pwa';
-import pkg from './package.json';
+import pkg from './package.json' with { type: 'json' };
+
+// The CI build stamps the commit, so Settings and problem reports say exactly which deploy is running.
+declare const process: { env: Record<string, string | undefined> };
+const version = `${pkg.version}+${(process.env.GITHUB_SHA ?? 'dev').slice(0, 7)}`;
 
 export default defineConfig({
   // Relative paths so the app works from any GitHub Pages folder (user.github.io/repo/).
   base: './',
-  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
+  define: { __APP_VERSION__: JSON.stringify(version) },
   plugins: [
     preact(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['icon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Cubit',
         short_name: 'Cubit',
@@ -22,7 +25,8 @@ export default defineConfig({
         display: 'standalone',
         orientation: 'any',
         background_color: '#f2f5f9',
-        theme_color: '#1f5bd8',
+        theme_color: '#f2f5f9',
+        launch_handler: { client_mode: 'focus-existing' },
         categories: ['productivity', 'utilities'],
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
@@ -33,6 +37,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globIgnores: ['**/og.png'],
         cleanupOutdatedCaches: true,
       },
     }),

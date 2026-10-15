@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { CopyPreset, CopyPresets, CopyRounding, DefaultCopyPreset } from '../core/copyPreset';
 import { DisplayFormat, Formats } from '../core/formats';
 import { CalculatorSession } from '../core/session';
@@ -48,11 +48,17 @@ export function CopyOptions({ anchor, onClose }: { anchor: Anchor; onClose: () =
   );
 
   const isCustom = precision === CustomChoice;
+  const stepRef = useRef<HTMLInputElement>(null);
+  // Choosing "Custom…" puts the cursor in the step box.
+  useEffect(() => {
+    if (isCustom) stepRef.current?.focus();
+  }, [isCustom, rounding]);
   const preset: CopyPreset = isCustom
     ? CopyPresets.make(formatId, rounding, settings.precisionFor(effective), includeUnit, step.trim())
     : CopyPresets.make(formatId, rounding, precision, includeUnit);
   const preview = s.copyText(preset) ?? '—';
   const stepValid = CopyPresets.tryParseIncrement(step) !== null;
+  const blocked = isCustom && rounding !== CopyRounding.AsShown && !stepValid;
   const unitName = effective.isFractional ? 'in' : (effective.unit?.symbol ?? '');
 
   const copy = async (): Promise<void> => {
@@ -113,7 +119,7 @@ export function CopyOptions({ anchor, onClose }: { anchor: Anchor; onClose: () =
       {isCustom && rounding !== CopyRounding.AsShown && (
         <label class="field">
           <span>Round to the nearest … {unitName}</span>
-          <input type="text" inputMode="decimal" value={step} placeholder="e.g. 0.25" onInput={(e) => setStep((e.currentTarget as HTMLInputElement).value)} />
+          <input type="text" inputMode="decimal" value={step} placeholder="e.g. 0.25" ref={stepRef} onInput={(e) => setStep((e.currentTarget as HTMLInputElement).value)} />
           <small class={step.length === 0 || stepValid ? 'hint' : 'hint bad'}>
             {step.length === 0 || stepValid ? 'Any step: 0.25, 5, 1/8, 1 1/2' : 'Use a number like 0.25 or 1/8'}
           </small>
@@ -129,14 +135,19 @@ export function CopyOptions({ anchor, onClose }: { anchor: Anchor; onClose: () =
         <small>Will copy</small>
         <output>{preview}</output>
       </div>
-      <button class="btn accent wide" onClick={copy}>
+      <button class="btn accent wide" onClick={copy} disabled={blocked}>
         Copy
       </button>
       <button
         class="link"
         onClick={() => {
+          // Back to the defaults; the panel stays open, as on the desktop.
           s.rememberCopyPreset(DefaultCopyPreset);
-          onClose();
+          setFormatId(null);
+          setRounding(DefaultCopyPreset.rounding);
+          setIncludeUnit(DefaultCopyPreset.includeUnit);
+          setStep('');
+          setPrecision(pickPrecision(shownFormat ?? Formats.FeetInches, DefaultCopyPreset.precision));
         }}
       >
         Reset to default

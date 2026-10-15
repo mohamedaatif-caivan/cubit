@@ -1,5 +1,5 @@
 import { Fragment } from 'preact';
-import { useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { CalcEngine, type HighlightSpan } from '../core/calcEngine';
 import type { HyphenAfterFeet } from '../core/parser';
 import type { Quantity } from '../core/quantity';
@@ -7,7 +7,7 @@ import { CalculatorSession, type TileModel } from '../core/session';
 import { CopyOptions } from './CopyOptions';
 import { ExpressionInput, activeInput } from './ExpressionInput';
 import { BackspaceIcon, ChevronIcon, CopyIcon, ExportIcon, MoreIcon, TrashIcon } from './icons';
-import { Anchor, Menu, MenuItem, Popover, anchorOf, longPress } from './Popover';
+import { Anchor, Menu, MenuItem, Popover, anchorOf, useLongPress } from './Popover';
 import { store, useStore } from './store';
 
 const insert = (text: string): void => activeInput()?.insert(text);
@@ -32,22 +32,32 @@ export function Highlighted({ text, spans }: { text: string; spans: readonly Hig
 
 // ---------------- Copy button ----------------
 
-/** Copy (one click, the remembered format) with an arrow for copy options. */
+let copyOptionsOpener: ((anchor: Anchor) => void) | null = null;
+
+/** Copy (one click, the remembered format; Shift+click adds the unit) with an arrow for copy options. */
 export function CopyButton() {
   const s = useStore();
   const [options, setOptions] = useState<Anchor | null>(null);
-  copyOptionsOpener = (anchor) => setOptions(anchor);
+  useEffect(() => {
+    copyOptionsOpener = setOptions;
+    return () => {
+      if (copyOptionsOpener === setOptions) copyOptionsOpener = null;
+    };
+  }, []);
+  const canCopy = s.session.canCopy;
   return (
     <div class="split" data-copy-anchor>
-      <button class="btn split-main" onClick={(e) => {
-          s.copyCurrent(e.shiftKey);
-          focusInput();
-        }}
-        title={s.copyTooltip} disabled={!s.session.canCopy}>
+      <button class="btn split-main" onClick={(e) => s.copyCurrent(e.shiftKey)} title={s.copyTooltip} aria-label={s.session.copyLabel} disabled={!canCopy}>
         <CopyIcon />
-        <span>{s.session.copyLabel}</span>
+        <span class="split-label">{s.session.copyLabel}</span>
       </button>
-      <button class="btn split-more" aria-label="Copy options (Ctrl+Shift+C)" title="Copy options (Ctrl+Shift+C)" onClick={(e) => setOptions(anchorOf(e))}>
+      <button
+        class="btn split-more"
+        aria-label="Copy options (Ctrl+Shift+C)"
+        title="Copy options (Ctrl+Shift+C)"
+        disabled={!canCopy}
+        onClick={(e) => setOptions(anchorOf(e))}
+      >
         <ChevronIcon />
       </button>
       {options && <CopyOptions anchor={options} onClose={() => setOptions(null)} />}
@@ -55,11 +65,9 @@ export function CopyButton() {
   );
 }
 
-let copyOptionsOpener: ((anchor: Anchor) => void) | null = null;
-
 /** Ctrl+Shift+C: opens copy options under the visible copy button. */
-export function openCopyOptions(doc: Document = document): void {
-  const el = doc.querySelector('[data-copy-anchor]');
+export function openCopyOptions(): void {
+  const el = document.querySelector('[data-copy-anchor]');
   if (el && copyOptionsOpener) copyOptionsOpener({ el });
 }
 
@@ -72,10 +80,7 @@ export function SaveAs(props: { anchor: Anchor; onClose: () => void; value?: Qua
   const save = (): void => {
     const problem = store.save(name, props.value ?? null, props.source ?? null, props.formatId ?? null);
     setError(problem);
-    if (!problem) {
-      props.onClose();
-      focusInput();
-    }
+    if (!problem) props.onClose();
   };
   return (
     <Popover anchor={props.anchor} onClose={props.onClose} class="small-form" label="Save as">
@@ -84,13 +89,20 @@ export function SaveAs(props: { anchor: Anchor; onClose: () => void; value?: Qua
         type="text"
         value={name}
         placeholder="Name, e.g. wall"
+        aria-label="Name"
         autoComplete="off"
         spellcheck={false}
-        onInput={(e) => setName((e.currentTarget as HTMLInputElement).value)}
+        onInput={(e) => {
+          setName((e.currentTarget as HTMLInputElement).value);
+          setError(null);
+        }}
         onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), save())}
       />
       {error && <p class="error-text">{error}</p>}
       <div class="form-actions">
+        <button class="btn" onClick={props.onClose}>
+          Cancel
+        </button>
         <button class="btn accent" onClick={save}>
           Save
         </button>
@@ -99,71 +111,120 @@ export function SaveAs(props: { anchor: Anchor; onClose: () => void; value?: Qua
   );
 }
 
-let saveOpener: ((doc: Document) => void) | null = null;
+let saveOpener: (() => void) | null = null;
 
 /** Ctrl+S: the Saved tab's name box when the side panel shows, otherwise a small form under Copy. */
-export function openSave(doc: Document = document): void {
-  if (doc === document && showSavedTab()) {
+export function openSave(): void {
+  if (showSavedTab()) {
     setTimeout(() => document.querySelector<HTMLInputElement>('[data-save-name]')?.focus(), 0);
     return;
   }
-  saveOpener?.(doc);
+  saveOpener?.();
 }
 
 // ---------------- Display ----------------
+
+/**
+ * The big result, shrunk to fit its box instead of being cut off: a calculator never shows part of a
+ * number. Only values too long to fit even at a third of the size wrap onto a second line.
+ */
+function FitResult({ text, approx }: { text: string; approx: boolean }) {
+  const inner = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const span = inner.current;
+    const box = span?.parentElement;
+    if (!span || !box) return;
+    const fit = (): void => {
+      span.style.fontSize = '';
+      span.style.whiteSpace = '';
+      const available = box.clientWidth;
+      const needed = span.scrollWidth;
+      if (available <= 0 || needed <= available) return;
+      const base = Number.parseFloat(getComputedStyle(span).fontSize);
+      const ratio = available / needed;
+      span.style.fontSize = `${base * (ratio < 0.34 ? 0.34 : ratio * 0.98)}px`;
+      if (ratio < 0.34) span.style.whiteSpace = 'normal';
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [text, approx]);
+  return (
+    <span ref={inner} class="result-text">
+      {approx && <span class="approx">≈</span>}
+      {text}
+    </span>
+  );
+}
+
+const isNarrow = (): boolean => typeof matchMedia !== 'undefined' && matchMedia('(max-width: 640px)').matches;
+
+const LongPlaceholder = 'Type a calculation, e.g. 5\'6 1/2" + 1.2m';
+const ShortPlaceholder = '5\'6 1/2" + 1.2m';
 
 export function Display({ compact = false }: { compact?: boolean }) {
   const s = useStore();
   const session = s.session;
   const display = session.display;
   const [saveAt, setSaveAt] = useState<Anchor | null>(null);
-  saveOpener = (doc) => {
-    const el = doc.querySelector('[data-copy-anchor]');
-    if (el) setSaveAt({ el });
-  };
+  useEffect(() => {
+    const open = (): void => {
+      const el = document.querySelector('[data-copy-anchor]');
+      if (el) setSaveAt({ el });
+    };
+    saveOpener = open;
+    return () => {
+      if (saveOpener === open) saveOpener = null;
+    };
+  }, []);
   const typing = session.isTyping;
   const errorCaption = s.errorCaption;
-  const placeholder = session.answer === null ? (compact ? '5\'6 1/2" + 1.2m' : 'Type a calculation, e.g. 5\'6 1/2" + 1.2m') : '';
+  const placeholder = session.answer === null ? (compact || isNarrow() ? ShortPlaceholder : LongPlaceholder) : '';
   const resultState = session.isStale ? 'is-stale' : typing && !compact ? 'is-preview' : 'is-final';
 
   return (
-    <section class={`display ${compact ? 'compact' : ''}`} aria-label="Calculation">
+    <section class={`display ${compact ? 'compact' : ''}`} aria-label="Calculator">
       <div class="input-row">
         <ExpressionInput class={compact ? 'small' : 'big'} label="Calculation" placeholder={placeholder} />
-        {!typing && session.echo && (
+        {!compact && !typing && session.echo && (
           <div class="echo" aria-hidden="true">
-            <Highlighted text={session.echo} spans={session.echoSpans} />
+            <span class="echo-text">
+              <Highlighted text={session.echo} spans={session.echoSpans} />
+            </span>
           </div>
         )}
       </div>
-      <div class={`result ${resultState}`} aria-live="polite">
-        {display && (
-          <>
-            {display.isApprox && <span class="approx">≈</span>}
-            <output class="result-text">{display.screenText}</output>
-          </>
-        )}
+      <div class="result-row">
+        <div class={`result ${resultState}`}>{display && <FitResult text={display.screenText} approx={display.isApprox} />}</div>
+        {compact && <CopyButton />}
       </div>
-      <div class="caption-row">
-        <div class="caption">
-          {errorCaption ? <span class="error-text">{errorCaption}</span> : display && <span>{display.caption}</span>}
-          {s.state.memory && <span class="memory">M {s.memoryText}</span>}
+      {(!compact || errorCaption) && (
+        <div class="caption-row">
+          <div class="caption">
+            {errorCaption ? <span class="error-text">{errorCaption}</span> : display && <span>{display.caption}</span>}
+            {!compact && s.state.memory && <span class="memory">M {s.memoryText}</span>}
+          </div>
+          {!compact && <AutoChip />}
+          {!compact && <CopyButton />}
         </div>
-        <button
-          class={`chip ${s.settings.answerFollowsInput ? 'on' : ''}`}
-          aria-pressed={s.settings.answerFollowsInput}
-          title="Answer in the first unit typed (Ctrl+U)"
-          onClick={() => {
-            s.setAnswerFollowsInput(!s.settings.answerFollowsInput);
-            focusInput();
-          }}
-        >
-          Auto
-        </button>
-        <CopyButton />
-      </div>
+      )}
       {saveAt && <SaveAs anchor={saveAt} onClose={() => setSaveAt(null)} />}
     </section>
+  );
+}
+
+function AutoChip() {
+  const s = useStore();
+  return (
+    <button
+      class={`chip auto ${s.settings.answerFollowsInput ? 'on' : ''}`}
+      aria-pressed={s.settings.answerFollowsInput}
+      title="Answer in the first unit typed (Ctrl+U)"
+      onClick={() => s.setAnswerFollowsInput(!s.settings.answerFollowsInput)}
+    >
+      Auto
+    </button>
   );
 }
 
@@ -172,7 +233,7 @@ export function Display({ compact = false }: { compact?: boolean }) {
 function Tile({ tile, compact }: { tile: TileModel; compact: boolean }) {
   const s = useStore();
   const [menu, setMenu] = useState<Anchor | null>(null);
-  const press = longPress(setMenu);
+  const press = useLongPress(setMenu);
   const copy = (withUnit: boolean): void => void s.copy(s.session.tileCopyText(tile.format, withUnit));
   const items: MenuItem[] = [
     { label: 'Copy', action: () => copy(false) },
@@ -183,13 +244,12 @@ function Tile({ tile, compact }: { tile: TileModel; compact: boolean }) {
     <div class={`tile ${tile.isPrimary ? 'primary' : ''}`} {...press.handlers}>
       <button
         class="tile-main"
-        title={`Show answers in ${tile.format.label.toLowerCase()}`}
+        title={`Show answers in ${tile.format.label.toLowerCase()} · right-click to copy`}
         aria-label={`${tile.format.label}: ${tile.isApprox ? 'about ' : ''}${tile.value}`}
         aria-pressed={tile.isPrimary}
         onClick={() => {
           if (press.consumed()) return;
           s.pickUnit(tile.format);
-          focusInput();
         }}
       >
         {!compact && <span class="tile-label">{tile.format.label}</span>}
@@ -199,15 +259,7 @@ function Tile({ tile, compact }: { tile: TileModel; compact: boolean }) {
         </span>
       </button>
       {!compact && (
-        <button
-          class="tile-copy"
-          title="Copy · Shift+click copies with the unit"
-          aria-label={`Copy ${tile.format.label}`}
-          onClick={(e) => {
-            copy(e.shiftKey);
-            focusInput();
-          }}
-        >
+        <button class="tile-copy" title="Copy · Shift+click copies with the unit" aria-label={`Copy ${tile.format.label}`} onClick={(e) => copy(e.shiftKey)}>
           <CopyIcon />
         </button>
       )}
@@ -219,17 +271,42 @@ function Tile({ tile, compact }: { tile: TileModel; compact: boolean }) {
 export function Tiles({ compact = false }: { compact?: boolean }) {
   const s = useStore();
   const display = s.session.display;
-  if (!display) return <div class="tiles empty" />;
-  if (display.value.power === 0)
-    return compact ? null : (
-      <div class="tiles empty">
-        <p class="muted">Plain number · no units</p>
+  const ref = useRef<HTMLDivElement>(null);
+  const tallest = useRef(0);
+
+  // The full layout keeps the tallest height the units have needed, so the keypad never jumps.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.minHeight = '';
+    const height = el.offsetHeight;
+    if (height > tallest.current) tallest.current = height;
+    el.style.minHeight = `${tallest.current}px`;
+  });
+  useEffect(() => {
+    const reset = (): void => {
+      tallest.current = 0;
+    };
+    window.addEventListener('resize', reset);
+    return () => window.removeEventListener('resize', reset);
+  }, []);
+
+  const tiles = display && display.value.power > 0 ? display.tiles : [];
+  const stale = s.session.isStale ? 'stale' : '';
+  if (compact)
+    return tiles.length === 0 ? null : (
+      <div class={`tiles chips ${stale}`} role="group" aria-label="Every unit">
+        <AutoChip />
+        {tiles.map((t) => (
+          <Tile key={t.format.id} tile={t} compact />
+        ))}
       </div>
     );
   return (
-    <div class={`tiles ${compact ? 'chips' : ''} ${s.session.isStale ? 'stale' : ''}`} role="group" aria-label="Every unit">
-      {display.tiles.map((t) => (
-        <Tile key={t.format.id} tile={t} compact={compact} />
+    <div ref={ref} class={`tiles ${tiles.length === 0 ? 'empty' : ''} ${stale}`} role="group" aria-label="Every unit">
+      {display?.value.power === 0 && <p class="muted">Plain number · no units</p>}
+      {tiles.map((t) => (
+        <Tile key={t.format.id} tile={t} compact={false} />
       ))}
     </div>
   );
@@ -241,7 +318,7 @@ type Key = { label: preact.ComponentChild; insert?: string; action?: string; kin
 
 const keys: Key[] = [
   { label: 'ans', insert: 'ans', kind: 'fn', title: 'Last answer' },
-  { label: 'to', insert: ' to ', kind: 'op', title: 'Show in a unit, e.g. … to mm' },
+  { label: 'to', insert: ' to ', kind: 'op word', title: 'Show in a unit, e.g. … to mm' },
   { label: 'MR', action: 'mr', kind: 'fn', title: 'Recall memory · right-click or hold to clear', menu: [{ label: 'Clear memory (MC)', action: () => store.memoryClear() }] },
   { label: 'M+', action: 'm+', kind: 'fn', title: 'Add to memory · right-click or hold to subtract', menu: [{ label: 'Subtract from memory (M−)', action: () => store.memoryAdd(-1) }] },
   { label: <>ft <span class="mark">'</span></>, insert: "'", kind: 'unit', title: 'Feet' },
@@ -265,7 +342,7 @@ const keys: Key[] = [
   { label: '5', insert: '5' },
   { label: '6', insert: '6' },
   { label: '×', insert: ' x ', kind: 'op' },
-  { label: <span class="stack"><b>6 ½</b><small>space</small></span>, insert: ' ', kind: 'unit', title: 'Space between inches and a fraction: 6␣1/2' },
+  { label: <span class="stack"><b>6 ½</b><small>space</small></span>, insert: ' ', kind: 'unit', title: 'Space between inches and a fraction: 6 1/2' },
   { label: <span class="stack"><b>⁄</b><small>fraction</small></span>, insert: '/', kind: 'unit', title: 'Fraction bar: 3/16' },
 
   { label: '1', insert: '1' },
@@ -277,7 +354,7 @@ const keys: Key[] = [
 
   { label: '0', insert: '0' },
   { label: '.', insert: '.' },
-  { label: '%', insert: '%', kind: 'op' },
+  { label: '%', insert: '%', kind: 'op word' },
   { label: '+', insert: ' + ', kind: 'op' },
   { label: '=', action: 'enter', kind: 'equals', title: 'Add to tape (Enter)' },
 ];
@@ -310,7 +387,7 @@ function runKey(key: Key): void {
 
 function KeyButton({ k }: { k: Key }) {
   const [menu, setMenu] = useState<Anchor | null>(null);
-  const press = k.menu ? longPress(setMenu) : null;
+  const press = useLongPress(k.menu ? setMenu : null);
   return (
     <>
       <button
@@ -319,13 +396,13 @@ function KeyButton({ k }: { k: Key }) {
         aria-label={typeof k.label === 'string' ? undefined : k.title}
         // Keep the caret in the calculation box: the keypad never takes focus.
         onMouseDown={(e) => e.preventDefault()}
-        {...(press?.handlers ?? {})}
+        {...press.handlers}
         onPointerDown={(e) => {
           if (e.pointerType === 'touch') e.preventDefault();
-          press?.handlers.onPointerDown(e);
+          press.handlers.onPointerDown?.(e);
         }}
         onClick={() => {
-          if (press?.consumed()) return;
+          if (press.consumed()) return;
           runKey(k);
         }}
       >
@@ -354,10 +431,16 @@ function TapeRow({ id }: { id: string }) {
   const entry = s.state.tape.find((e) => e.id === id)!;
   const [menu, setMenu] = useState<Anchor | null>(null);
   const [form, setForm] = useState<{ kind: 'save' | 'note'; anchor: Anchor } | null>(null);
-  const press = longPress(setMenu);
+  const press = useLongPress(setMenu);
   const time = new Date(entry.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   const insertValue = (): void => insert(CalculatorSession.tapeInsertText(entry));
+  const editAgain = (): void => {
+    s.setInput(entry.input);
+    s.setSideOpen(false);
+  };
+  const typing = session.input.trim().length > 0;
   const items: MenuItem[] = [
+    { label: 'Edit again', action: editAgain },
     { label: 'Copy result', action: () => void s.copy(session.copyFormat(entry.value, entry.formatId)) },
     { label: 'Insert result', action: insertValue },
     { label: 'Save as value…', action: () => setForm({ kind: 'save', anchor: menuAnchor() }) },
@@ -371,13 +454,12 @@ function TapeRow({ id }: { id: string }) {
     <li class="tape-row" ref={rowRef} {...press.handlers}>
       <button
         class="tape-main"
-        title="Click to edit again. Right-click for more."
+        title={typing ? 'Click to insert this result at the cursor. Right-click for more.' : 'Click to edit again. Right-click for more.'}
         onClick={() => {
           if (press.consumed()) return;
-          if (session.input.trim().length === 0) s.setInput(entry.input);
-          else insertValue();
+          if (typing) insertValue();
+          else editAgain();
           s.setSideOpen(false);
-          focusInput();
         }}
       >
         <span class="tape-input">
@@ -387,7 +469,7 @@ function TapeRow({ id }: { id: string }) {
         <span class="tape-result">{session.formatPrimary(entry.value, entry.formatId)}</span>
         {entry.note && <span class="tape-note">{entry.note}</span>}
       </button>
-      <button class="icon-btn row-more" aria-label="More" onClick={(e) => setMenu(anchorOf(e))}>
+      <button class="icon-btn row-more" aria-label={`More actions for ${entry.input}`} title="More" onClick={(e) => setMenu(anchorOf(e))}>
         <MoreIcon />
       </button>
       {menu && <Menu anchor={menu} items={items} onClose={() => setMenu(null)} />}
@@ -406,7 +488,6 @@ function NoteForm({ anchor, id, note, onClose }: { anchor: Anchor; id: string; n
   const apply = (value: string | null): void => {
     store.setNote(id, value);
     onClose();
-    focusInput();
   };
   return (
     <Popover anchor={anchor} onClose={onClose} class="small-form" label="Note">
@@ -415,6 +496,8 @@ function NoteForm({ anchor, id, note, onClose }: { anchor: Anchor; id: string; n
         type="text"
         value={text}
         placeholder="e.g. kitchen floor"
+        aria-label="Note"
+        data-select-all
         onInput={(e) => setText((e.currentTarget as HTMLInputElement).value)}
         onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), apply(text))}
       />
@@ -424,6 +507,9 @@ function NoteForm({ anchor, id, note, onClose }: { anchor: Anchor; id: string; n
             Remove
           </button>
         )}
+        <button class="btn" onClick={onClose}>
+          Cancel
+        </button>
         <button class="btn accent" onClick={() => apply(text)}>
           Save
         </button>
@@ -444,6 +530,8 @@ function downloadFile(name: string, text: string, type: string): void {
 }
 
 export { downloadFile };
+
+const ByteOrderMark = String.fromCharCode(0xfeff);
 
 const today = (): string => {
   const d = new Date();
@@ -466,8 +554,9 @@ function TapePanel() {
       return;
     }
     // A byte-order mark so Excel opens the file as UTF-8 (², ³, ″).
-    downloadFile(`Cubit tape ${today()}.csv`, '﻿' + s.session.tapeAsCsv(), 'text/csv;charset=utf-8');
-    s.toast('Exported the tape as CSV');
+    const name = `Cubit tape ${today()}.csv`;
+    downloadFile(name, ByteOrderMark + s.session.tapeAsCsv(), 'text/csv;charset=utf-8');
+    s.toast('Exported ' + name);
   };
   return (
     <>
@@ -496,11 +585,13 @@ function TapePanel() {
       </div>
       {confirm && (
         <Popover anchor={confirm} onClose={() => setConfirm(null)} class="small-form" label="Clear tape">
-          <p>Clear every entry on the tape?</p>
+          <p>Clear every entry on the tape? You can undo it for a few seconds.</p>
           <div class="form-actions">
+            <button class="btn" data-autofocus onClick={() => setConfirm(null)}>
+              Cancel
+            </button>
             <button
               class="btn danger"
-              data-autofocus
               onClick={() => {
                 s.clearTape();
                 setConfirm(null);
@@ -521,7 +612,7 @@ function SavedRow({ name, index }: { name: string; index: number }) {
   const s = useStore();
   const saved = s.state.savedValues.find((v) => v.name === name)!;
   const [menu, setMenu] = useState<Anchor | null>(null);
-  const press = longPress(setMenu);
+  const press = useLongPress(setMenu);
   const items: MenuItem[] = [
     { label: 'Insert', action: () => insert('@' + saved.name) },
     { label: 'Copy value', action: () => void s.copy(s.session.copyFormat(saved.value, saved.formatId)) },
@@ -539,11 +630,11 @@ function SavedRow({ name, index }: { name: string; index: number }) {
         }}
       >
         <span class="saved-name">@{saved.name}</span>
-        {index < 9 && <kbd class="shortcut">Ctrl+{index + 1}</kbd>}
+        {index < 9 && <kbd class="shortcut" title={`Ctrl+${index + 1} or Alt+${index + 1} inserts it`}>Alt+{index + 1}</kbd>}
         <span class="saved-value">{s.session.formatPrimary(saved.value, saved.formatId)}</span>
         <span class="saved-source">{saved.source}</span>
       </button>
-      <button class="icon-btn row-more" aria-label="More" onClick={(e) => setMenu(anchorOf(e))}>
+      <button class="icon-btn row-more" aria-label={`More actions for @${saved.name}`} title="More" onClick={(e) => setMenu(anchorOf(e))}>
         <MoreIcon />
       </button>
       {menu && <Menu anchor={menu} items={items} onClose={() => setMenu(null)} />}
@@ -574,8 +665,19 @@ function SavedPanel() {
           aria-label="Name for the current result"
           autoComplete="off"
           spellcheck={false}
-          onInput={(e) => setName((e.currentTarget as HTMLInputElement).value)}
-          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), save())}
+          onInput={(e) => {
+            setName((e.currentTarget as HTMLInputElement).value);
+            setError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              save();
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              focusInput(); // back to the calculation, as after Ctrl+S on the desktop
+            }
+          }}
         />
         <button class="btn" title="Save the current result (Ctrl+S)" onClick={save}>
           Save result
@@ -614,29 +716,32 @@ export function SavedChips() {
 }
 
 export function SidePanel() {
-  const [tab, setTab] = useState<'tape' | 'saved'>('tape');
-  sideTabSetter = setTab;
+  const s = useStore();
+  const tab = s.sideTab;
+  const tabs: ['tape' | 'saved', string][] = [
+    ['tape', 'Tape'],
+    ['saved', 'Saved values'],
+  ];
   return (
     <div class="side-panel">
-      <div class="tabs" role="tablist">
-        <button role="tab" aria-selected={tab === 'tape'} class={tab === 'tape' ? 'on' : ''} onClick={() => setTab('tape')}>
-          Tape
-        </button>
-        <button role="tab" aria-selected={tab === 'saved'} class={tab === 'saved' ? 'on' : ''} onClick={() => setTab('saved')}>
-          Saved values
-        </button>
+      <div class="tabs" role="tablist" aria-label="Side panel">
+        {tabs.map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={tab === id} class={tab === id ? 'on' : ''} onClick={() => s.setSideTab(id)}>
+            {label}
+          </button>
+        ))}
       </div>
-      <div class="side-body">{tab === 'tape' ? <TapePanel /> : <SavedPanel />}</div>
+      <div class="side-body" role="tabpanel">
+        {tab === 'tape' ? <TapePanel /> : <SavedPanel />}
+      </div>
     </div>
   );
 }
 
-let sideTabSetter: ((tab: 'tape' | 'saved') => void) | null = null;
-
 /** Switches the side panel to Saved values (Ctrl+S while it's visible). */
 export function showSavedTab(): boolean {
   const panel = document.querySelector<HTMLElement>('.side-panel');
-  if (!sideTabSetter || !panel || panel.offsetParent === null) return false;
-  sideTabSetter('saved');
+  if (!panel || panel.offsetParent === null) return false;
+  store.setSideTab('saved');
   return true;
 }

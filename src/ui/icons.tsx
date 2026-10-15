@@ -97,12 +97,6 @@ export const BackIcon = () => (
     <path d="M16 10H4M9 5l-5 5 5 5" />
   </Icon>
 );
-export const PopOutIcon = () => (
-  <Icon>
-    <rect x="3" y="5" width="14" height="11" rx="1.5" />
-    <rect x="10" y="10" width="5" height="4" rx=".5" fill="currentColor" stroke="none" />
-  </Icon>
-);
 export const KeyboardIcon = () => (
   <Icon>
     <rect x="2.5" y="5" width="15" height="10" rx="1.5" />

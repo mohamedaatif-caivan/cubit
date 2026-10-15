@@ -70,17 +70,21 @@ export class Store {
   errorShown = false;
   /** After Enter on a bad calculation, the short error replaces the caption under the result. */
   errorRevealed = false;
-  notice: Notice | null = null;
+  toastNotice: Notice | null = null;
+  undoNotice: Notice | null = null;
   historyIndex = -1;
+  /** The half-typed calculation, kept while ↑/↓ shows earlier ones. */
+  private draft = '';
   settingsOpen = false;
   sideOpen = false;
-  /** Layout before Settings opened from the compact layout. */
-  private layoutBeforeSettings: LayoutMode | null = null;
+  /** The side panel's tab, kept while the narrow-window drawer closes and opens. */
+  sideTab: 'tape' | 'saved' = 'tape';
 
   private listeners = new Set<() => void>();
   private saveTimer: number | undefined;
   private errorTimer: number | undefined;
-  private noticeTimer: number | undefined;
+  private toastTimer: number | undefined;
+  private undoTimer: number | undefined;
   private noticeId = 0;
 
   constructor() {
@@ -118,7 +122,16 @@ export class Store {
   }
 
   /** Replaces everything with an imported data file (a backup or the desktop app's state.json). */
-  importState(text: string): string | null {
+  importState(text: string): { ok: boolean; message: string | null } {
+    // Only a Cubit backup or the desktop app's state.json: both have a schema number and settings.
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      return { ok: false, message: 'Not a Cubit data file.' };
+    }
+    const looksRight = typeof raw === 'object' && raw !== null && typeof (raw as { schema?: unknown }).schema === 'number' && typeof (raw as { settings?: unknown }).settings === 'object';
+    if (!looksRight) return { ok: false, message: 'Not a Cubit data file.' };
     try {
       const { state, warning } = StateStore.fromJson(text);
       this.state = state;
@@ -126,9 +139,9 @@ export class Store {
       this.historyIndex = -1;
       this.saveNow();
       this.changed();
-      return warning;
+      return { ok: true, message: warning };
     } catch (e) {
-      if (e instanceof StateFormatError) return e.message;
+      if (e instanceof StateFormatError) return { ok: false, message: e.message };
       throw e;
     }
   }
@@ -177,7 +190,6 @@ export class Store {
   commit(): boolean {
     if (!this.session.isTyping) return false;
     const entry = this.session.commit();
-    this.historyIndex = -1;
     if (entry === null) {
       window.clearTimeout(this.errorTimer);
       this.errorShown = true;
@@ -185,10 +197,13 @@ export class Store {
       this.changed();
       return false;
     }
+    this.historyIndex = -1;
+    this.draft = '';
     this.errorRevealed = false;
     this.updateError();
     this.requestSave();
     this.changed();
+    void keepStorage();
     return true;
   }
 
@@ -207,40 +222,44 @@ export class Store {
     const history = this.session.history;
     if (history.length === 0) return null;
     if (direction === -1 && this.historyIndex < 0) return null;
+    // Leaving the half-typed calculation keeps it, so ↓ past the newest entry brings it back.
+    if (this.historyIndex < 0) this.draft = this.session.input;
     const next = this.historyIndex + direction;
     this.historyIndex = next < -1 ? -1 : next > history.length - 1 ? history.length - 1 : next;
-    return this.historyIndex < 0 ? '' : history[this.historyIndex];
+    return this.historyIndex < 0 ? this.draft : history[this.historyIndex];
   }
 
   // ---------------- Notices ----------------
 
+  /** A short message. It shows next to an Undo offer rather than replacing it. */
   toast(text: string): void {
-    this.showNotice('toast', text.length > 60 ? text.slice(0, 57) + '…' : text, ToastMs);
-  }
-
-  private undoable(description: string): void {
-    this.showNotice('undo', description, UndoMs);
-  }
-
-  private showNotice(kind: Notice['kind'], text: string, ms: number): void {
-    window.clearTimeout(this.noticeTimer);
-    this.notice = { kind, text, id: ++this.noticeId };
-    this.noticeTimer = window.setTimeout(() => {
-      this.notice = null;
+    window.clearTimeout(this.toastTimer);
+    this.toastNotice = { kind: 'toast', text: text.length > 60 ? text.slice(0, 57) + '…' : text, id: ++this.noticeId };
+    this.toastTimer = window.setTimeout(() => {
+      this.toastNotice = null;
       this.changed();
-    }, ms);
+    }, ToastMs);
     this.changed();
   }
 
-  dismissNotice(): void {
-    window.clearTimeout(this.noticeTimer);
-    this.notice = null;
+  /** A deletion happened: offer Undo for a few seconds (the button, or Ctrl+Z). */
+  private undoable(description: string): void {
+    window.clearTimeout(this.undoTimer);
+    this.undoNotice = { kind: 'undo', text: description, id: ++this.noticeId };
+    this.undoTimer = window.setTimeout(() => {
+      this.undoNotice = null;
+      this.changed();
+    }, UndoMs);
     this.changed();
   }
 
   undo(): void {
-    this.dismissNotice();
-    if (!this.session.undo()) return;
+    window.clearTimeout(this.undoTimer);
+    this.undoNotice = null;
+    if (!this.session.undo()) {
+      this.changed();
+      return;
+    }
     this.requestSave();
     this.changed();
   }
@@ -293,9 +312,13 @@ export class Store {
 
   // ---------------- Answer unit ----------------
 
+  /** A unit tile was clicked: answers show in it from now on (Auto turns off). */
   pickUnit(format: DisplayFormat): void {
+    const wasAuto = this.settings.answerFollowsInput;
+    const before = this.settings.primaryFor(format.power).id;
     this.session.pickUnit(format);
     this.settingsChanged();
+    if (wasAuto || before !== format.id) this.toast(`Answers in ${format.label.toLowerCase()} · Ctrl+U for Auto`);
   }
 
   setAnswerFollowsInput(follow: boolean): void {
@@ -333,13 +356,13 @@ export class Store {
   openSettings(open: boolean): void {
     if (open === this.settingsOpen) return;
     this.settingsOpen = open;
-    if (open && this.settings.layout === 'Compact') {
-      this.layoutBeforeSettings = 'Compact';
-      this.settings.layout = 'Full';
-    } else if (!open && this.layoutBeforeSettings) {
-      this.settings.layout = this.layoutBeforeSettings;
-      this.layoutBeforeSettings = null;
-    }
+    this.changed();
+  }
+
+
+  setSideTab(tab: 'tape' | 'saved'): void {
+    if (tab === this.sideTab) return;
+    this.sideTab = tab;
     this.changed();
   }
 
@@ -440,6 +463,21 @@ async function writeClipboard(text: string): Promise<boolean> {
     }
     area.remove();
     return ok;
+  }
+}
+
+/**
+ * Asks the browser to keep Cubit's data instead of clearing it when space runs low or the site goes
+ * unused (Safari clears sites that aren't installed after 7 days). Asked once there's something to keep.
+ */
+let storageAsked = false;
+async function keepStorage(): Promise<void> {
+  if (storageAsked) return;
+  storageAsked = true;
+  try {
+    if (!(await navigator.storage?.persisted?.())) await navigator.storage?.persist?.();
+  } catch {
+    // Not supported: nothing to do.
   }
 }
 

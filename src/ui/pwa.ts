@@ -1,4 +1,7 @@
 import { registerSW } from 'virtual:pwa-register';
+import { logError, store } from './store';
+
+const HourMs = 60 * 60 * 1000;
 
 interface InstallPrompt extends Event {
   prompt(): Promise<void>;
@@ -17,6 +20,7 @@ class Pwa {
   private registration: ServiceWorkerRegistration | undefined;
   private update: ((reload?: boolean) => Promise<void>) | null = null;
   private listeners = new Set<() => void>();
+  private lastCheck = Date.now();
 
   get canInstall(): boolean {
     return this.installPrompt !== null;
@@ -40,22 +44,32 @@ class Pwa {
       },
       onOfflineReady: () => {
         this.offlineReady = true;
+        store.toast('Ready to work offline');
         this.changed();
       },
       onRegisteredSW: (_url, registration) => {
         this.registration = registration;
-        // Look for a new version every few hours while the app stays open.
-        if (registration) setInterval(() => void registration.update(), 4 * 60 * 60 * 1000);
+        // Look for a new version every few hours while the app stays open, and when it comes back to the
+        // screen (phones suspend apps rather than closing them, so a timer alone rarely fires).
+        if (!registration) return;
+        setInterval(() => void this.checkForUpdate(), 4 * HourMs);
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible' && Date.now() - this.lastCheck > HourMs) void this.checkForUpdate();
+        });
       },
+      onRegisterError: (error: unknown) => logError(`Service worker: ${String(error)}`),
     });
   }
 
-  async checkForUpdate(): Promise<void> {
+  /** True when a new version was found (it then downloads and shows "Update ready"). */
+  async checkForUpdate(): Promise<boolean> {
+    this.lastCheck = Date.now();
     try {
       await this.registration?.update();
     } catch {
-      // Offline: try again later.
+      return false; // offline: try again later
     }
+    return !!this.registration?.installing || !!this.registration?.waiting || this.updateReady;
   }
 
   applyUpdate(): void {
