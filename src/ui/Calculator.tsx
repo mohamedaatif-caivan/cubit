@@ -39,7 +39,11 @@ export function CopyButton() {
   copyOptionsOpener = (anchor) => setOptions(anchor);
   return (
     <div class="split" data-copy-anchor>
-      <button class="btn split-main" onClick={() => s.copyCurrent()} title={s.copyTooltip} disabled={!s.session.canCopy}>
+      <button class="btn split-main" onClick={(e) => {
+          s.copyCurrent(e.shiftKey);
+          focusInput();
+        }}
+        title={s.copyTooltip} disabled={!s.session.canCopy}>
         <CopyIcon />
         <span>{s.session.copyLabel}</span>
       </button>

@@ -265,8 +265,10 @@ export class Store {
     return true;
   }
 
-  copyCurrent(): void {
-    void this.copy(this.session.copyText());
+  /** The Copy button and Ctrl+C. Shift+click adds the unit to decimal values ("1676.4 mm"), as on the unit tiles. */
+  copyCurrent(withUnit = false): void {
+    const preset = this.settings.copyPreset;
+    void this.copy(this.session.copyText(withUnit ? { ...preset, includeUnit: true } : preset));
   }
 
   get copyTooltip(): string {
@@ -280,7 +282,7 @@ export class Store {
           : preset.rounding === CopyRounding.Down
             ? 'rounded down'
             : 'rounded to nearest';
-    return `Copy in ${format}, ${rounding} (Ctrl+C)`;
+    return `Copy in ${format}, ${rounding} (Ctrl+C) · Shift+click copies with the unit`;
   }
 
   rememberCopyPreset(preset: CopyPreset): void {
